@@ -26,6 +26,25 @@ from skimage import filters
 
 # make the void fade in, in a region with smooth boundaries? somewhat difficult but will look cool
 
+# let's break this into a few modules.
+
+
+# quadqueue: quadtree without recursion.
+# make a closure that takes a set of bounds and depth and checks the std (or w/e) inside them using a view on the (nonlocal) frame array
+# it then modifies the output array, using a view with same bounds. (if it's a line-drawing thing) 
+# if the node condition is met, return the bounds on the child partitions, with depth += 1.
+# if it's a color-averaging thing and leaf condition is met, average the colors in the output frame. or the input frame.
+
+# make a queue and put a set of bounds describing the entire image in it. give it depth 0.
+# while true:
+#   try:
+#       pop bounds from queue
+#   except queue empty:
+#       break
+#   else:
+#       call the closure with the bounds
+#       push whatever bounds it gave back into the queue
+
 #---------------------------------------------------------------------------------------------------
 
 def difference_render(func, device=0, dist=10):
@@ -50,6 +69,54 @@ def difference_render(func, device=0, dist=10):
     cap.release()
     cv2.destroyAllWindows()
 
+
+#---------------------------------------------------------------------------------------------------
+
+def special_halo_render(device=0):
+    """
+    render a cam feed with halo, with continually varying parameters given to it
+    """
+    cap = cv2.VideoCapture(device)
+
+    frame_number = 0
+    while True:
+        ret, frame = cap.read()
+        roll = 150 * np.sin(frame_number * 0.01 * np.pi) # varies from 0-50 with 200 frame frequency
+        cv2.imshow('frame', halo(frame, roll=int(roll)))
+        frame_number += 1
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+#---------------------------------------------------------------------------------------------------
+
+def special_halo_render_two(device=0):
+    """
+    render a cam feed with halo_two_dee, with continually varying parameters given to it
+    """
+    cap = cv2.VideoCapture(device)
+
+    frame_number = 0
+    magnitude = 15
+    while True:
+        _, frame = cap.read()
+        # varies from -magnitude to +magnitude with period 200 frames
+        roll_rows = magnitude * np.sin(frame_number * 0.01 * np.pi)
+        roll_cols = magnitude * np.cos(frame_number * 0.01 * np.pi)
+        cv2.imshow(
+            'frame',
+            halo_two_dee(
+                frame,
+                roll_rows=int(roll_rows),
+                roll_cols=int(roll_cols)))
+        frame_number += 1
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
 
 #---------------------------------------------------------------------------------------------------
 
@@ -116,17 +183,19 @@ def tree_edges(frame):
     given threshold. return a bool mask corresponding to the edges of every node and leaf.
     """
 
+    frame = np.atleast_3d(frame)
     mask = np.zeros(frame.shape[:-1], dtype=np.bool)    
+    dim = frame.shape[-1]
 
     def quadtree(frame_partition, mask_partition, depth=0):
         """
         partition and add splitting lines to the mask.
         """
-        std = frame_partition.reshape(-1, 3).std(0)
-        if max(std) <= MAX_LEAF_STD or depth == MAX_TREE_DEPTH:
+        # std = frame_partition.reshape(-1, 3).std(0)
+        if depth == MAX_TREE_DEPTH:
             # leaf
             pass
-        else:
+        elif max([frame_partition[:, :, d].std() for d in range(dim)]) >= MAX_LEAF_STD:
             # node
             y, x, _ = frame_partition.shape
             y = int(y / 2)
@@ -152,6 +221,17 @@ def draw_tree(frame):
     tree = tree_edges(frame)
     tree = morphology.binary_dilation(tree)
     return color_mask(frame, np.logical_not(tree))
+
+def draw_gray_tree(frame):
+    """
+    use a grayscale copy of the frame to draw a quadtree on the original frame
+    """
+    tree = tree_edges(grayscale(frame))
+    tree = morphology.binary_dilation(tree)
+    return color_mask(frame, np.logical_not(tree))
+
+# pca projection: every 100 frames or something do a PCA on the frame and get the first principal component.
+# project all the pixels in the subsequent frames along that component instead of using grayscale.
 
 def neg_tree(frame):
     """
@@ -433,7 +513,7 @@ def smooth_scale(frame, sigma=2, scale=3):
 def halo(frame, roll=30, thresh_param=50):
     """
     let's try and put a crazy-ass halo around things.
-    roll=30 and thresh_param=5 with the straight hard threshold looks good.
+    roll=30 and thresh_param=50 with the straight hard threshold looks good.
     """
 
     # roll the frame a little
@@ -460,6 +540,33 @@ def halo(frame, roll=30, thresh_param=50):
 
     return frame + difference
 
+def halo_two_dee(frame, roll_rows=30, roll_cols=30, thresh_param=50):
+    """
+    do the halo thing with a 2D roll.
+    deceptively, this is doing something rather different than the regular halo, which operates on
+    the flattened array.
+    """
+    # roll the frame a little (rows)
+    roll_frame = np.roll(frame, roll_rows, axis=0).astype(np.int32)
+    # cols
+    roll_frame = np.roll(roll_frame, roll_cols, axis=1).astype(np.int32)
+
+    # get the difference (we'll turn this into the halo)
+    difference = np.abs(frame.astype(np.int32) - roll_frame).astype(np.uint8)
+
+    # use adaptive thresholding to find a mask describing the interesting regions in the difference
+    # mask = threshold_mask(difference, block_size=thresh_param)
+    mask = np.linalg.norm(difference, axis=2) > thresh_param
+
+    # get the differences
+    difference = color_mask(difference, mask)
+    # return difference
+    # and the original image
+    frame = color_mask(frame, np.logical_not(mask))
+
+    return frame + difference
+
+
 #---------------------------------------------------------------------------------------------------
 
 def compose_one_arg(arg, *functions):
@@ -476,8 +583,9 @@ def compose_one_arg(arg, *functions):
 if __name__ == '__main__':
     if len(sys.argv) > 1:
         # gray_window(int(sys.argv[1]))
-        render(draw_tree, int(sys.argv[1]))
-
+        # render(draw_gray_tree, int(sys.argv[1]))
+        # special_halo_render(int(sys.argv[1]))
+        special_halo_render_two(int(sys.argv[1]))
         # difference_render(smooth_scale, int(sys.argv[1]))
     else:
         render(tree_thresh)

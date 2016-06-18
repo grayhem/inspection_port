@@ -59,8 +59,8 @@ class Void(object):
         self.random_generator = np.random.RandomState(seed=seed)
 
         # these are all the stars we can use:
-        self.star_generators = {
-            "regular_stars" :  regular_stars,
+        self.star_functions = {
+            "regular_stars" : regular_stars,
             "crosses" : crosses
         }
         if not all([this_star in self.star_generators for this_star in stars.keys()]):
@@ -82,9 +82,9 @@ class Void(object):
                 for _ in range(star_properties["num_tries"]):
                     if self.random_generator.uniform() < star_properties["probability"]:
                         self.star_deque.push(
-                            self.star_generators[star_name](
-                                self.random_generator,
-                                **star_properties["args"]))
+                            self.star_generator(
+                                self.star_functions[star_name],
+                                star_properties["args"]))
 
 
     def frame_generator(self):
@@ -105,7 +105,8 @@ class Void(object):
                 this_star_iterator = self.star_deque.pop()
                 try:
                     # try to draw the star on the frame
-                    frame = draw_star(this_star_iterator.__next__(), frame)
+                    # frame = draw_star(this_star_iterator.__next__(), frame)
+                    frame += this_star_iterator.__next__()
                 except StopIteration:
                     # if there's no more drawing to do, that's fine.
                     pass
@@ -117,10 +118,89 @@ class Void(object):
             yield frame
 
 
+    def star_generator(self, star_function, star_function_args):
+        """
+        yields a 3d numpy array and its location in the frame, wrapped in a dict. the numpy array
+        is provided by the star function.
 
-def draw_star(star, frame):
+        {
+            "star" : 3d ndarray,
+            "location" : ndarray star minimum corner location as [row, col] pixel coordinates
+        }
+
+        star_function_args should contain "duration" and "size" at a minimum. they can be literal
+        values or tuples of (min, max) specifying range for a random value.
+        """
+
+
+
+        --------------------------------------
+        
+        all of this part only has to be done once per star parameter specification. we can do it in another function called by the constructor method.
+        we can also use the same function (method for random generator) for size and duration.
+
+    def _sanitize_args(self, arg_dict):
+        """
+        iterate over the arguments in a star arg dictionary and translate them into a useful
+        standard format
+        """
+        # get a size first
+        size = arg_dict["size"]
+        if isinstance(size, tuple):
+            star_function_args["size"] = self.random_generator.random_integers(
+                low=size[0],
+                high=size[1])
+
+        # and get a duration
+        duration = arg_dict["duration"]
+        if isinstance(duration, tuple):
+            duration = self.random_generator.random_integers(low=duration[0], high=duration[1])
+
+        # now clean up the color specification
+        arg_dict["color"] = color_lookup(arg_dict["color"])
+
+    def _arg_from_maybe_range(self, maybe_range):
+        """
+        this is totally silly
+        """
+        if isinstance(maybe_range, tuple):
+            return self.random_generator.random_integers(low=maybe_range[0], high=maybe_range[1])
+        else:
+            return maybe_range
+
+
+        --------------------------------------
+
+
+        # get the basic star
+        star = star_function(star_function_args)
+
+        # now figure out its location (keeping in mind its shape and the shape of the frame)
+        viable_area = self.shape - star.shape
+        location = np.asarray([
+            self.random_generator.random_integers(
+                low=0,
+                high=viable_area[0]),
+            self.random_generator.random_integers(
+                low=0,
+                high=viable_area[1])])
+
+        output = {"location": location}
+        # not pretty
+
+        for frame_number in range(duration):
+            # we want the star to be at maximum value at duration/2 and minimum at 0 and duration.
+            # this will scale linearly as a function of time.
+            scale = (duration/2 - np.abs(frame_number - duration/2)) / (duration/2)
+            output["star"] = (star * scale).astype(np.uint8)
+            yield output
+
+
+
+def draw_star_on_frame(star, frame, mode="replace"):
     """
-    draw the output of a star generator on a frame
+    draw a star on the frame given, and return the frame.
+    mode : {'add', 'replace', 'subtract'}
     """
 
     # what does the star generator output look like?
@@ -131,48 +211,31 @@ def draw_star(star, frame):
 
 
 
-def regular_stars(
-        random_generator,
-        color='red',
-        size=5,
-        duration=(30, 1000)):
+def regular_stars(args):
     """
-    using the supplied random number generator, draw a + at a random location. returns a dict:
-    {
-        "star" : 3d ndarray,
-        "location" : ndarray star minimum corner location as proportion of frame edge. [0-1] float.
-    }
+    draw a + at a random location. returns a dict:
+    
     color can be specified as a string or 3 element ndarray (rgb, uint8)
     size and duration can be exact values (integer) or tuples of integers indicating a range for a
     uniform random number. size should be odd.
     """
 
-    # if color was specified as a string, look up what it should be as an array
-    if isinstance(color, str):
-        color = DEFAULT_COLORS[color]
-
-    # set a random location in the output
-    output = {'location' : random_generator.uniform(size=2)}
-
-    # and get a duration
-    if isinstance(duration, tuple):
-        duration = random_generator.random_integers(low=duration[0], high=duration[1])
-
-    # and get a size
-
-    # draw the original star
-    original_star = make the star (using 1s and 0s only)
-    we can make this function generic (higher-order) and pass it a star-generating function.
-    or make it a method of the Void object so it will have access to the frame shape and random generator.
     
-    for frame_number in range(duration):
-        up until frame_number is half the duration, scale pixel color vector magnitude until it reaches max of color
-        then after that decrease it until it hits 1 again.
-        we can make the color scaling linear or exponential... etc
-
-        output["star"] = original_star * color * scaling_factor
-
-        yield output
 
 
+
+def color_lookup(color):
+    """
+    given a string or ndarray representing a color, throw an error or return an appropriate ndarray.
+    """
+    if isinstance(color, str):
+        return DEFAULT_COLORS[color]
+    elif isinstance(color, np.ndarray):
+        color = color.flatten()
+        if color.shape == (3,):
+            return color.astype(np.uint8)
+        else:
+            raise ValueError("color must be a 3-length ndarray")
+    else:
+        raise ValueError("color was not of a recognizable type")
 
