@@ -1,4 +1,4 @@
-# pylint: disable=E0401, E1101
+# pylint: disable=E0401, E1101, C0103
 
 """
 very simple composable effects and filters in the image domain
@@ -44,7 +44,8 @@ def draw_gray_tree(frame):
     """
     use a grayscale copy of the frame to draw a quadtree on the original frame
     """
-    tree = trees.tree_edges(grayscale(frame))
+    # tree = trees.tree_edges(grayscale(frame))
+    tree = trees.higher_tree_edges(grayscale(frame))
     tree = morphology.binary_dilation(tree)
     return color_mask(frame, np.logical_not(tree))
 

@@ -50,7 +50,7 @@ def framerate_wrapper(func, frame, time_per_pixel=0.0003, bar_height=30):
     bar_length = int(np.ceil(execution_time / time_per_pixel))
     frame[-bar_height:, :bar_length, :] = 255
 
-    # print(execution_time)
+    print(execution_time)
     # print(bar_length)
     return frame
 
@@ -147,7 +147,22 @@ def render(func, device=0):
  
 #---------------------------------------------------------------------------------------------------
 
+def render_generator(func, device=0):
+    """
+    render a cam feed with a generator yielding frames inside the while loop. just look at the code.
+    """
 
+    cap = cv2.VideoCapture(device)
+
+    while True:
+        _, frame = cap.read()
+        jenny = func(frame)
+        for this_frame in jenny:
+            cv2.imshow('frame', this_frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    cap.release()
+    cv2.destroyAllWindows()
 
 
 
@@ -156,8 +171,9 @@ def render(func, device=0):
 if __name__ == '__main__':
     if len(sys.argv) > 1:
         # gray_window(int(sys.argv[1]))
-        # render(primitives.draw_gray_tree, int(sys.argv[1]))
-        render(trees.color_tree, int(sys.argv[1]))
+        render(primitives.draw_gray_tree, int(sys.argv[1]))
+        # render(trees.color_tree, int(sys.argv[1]))
+        # render(effects.draw_channel_trees, int(sys.argv[1]))
         # special_halo_render(int(sys.argv[1]))
         # special_halo_render_two(int(sys.argv[1]))
         # difference_render(smooth_scale, int(sys.argv[1]))

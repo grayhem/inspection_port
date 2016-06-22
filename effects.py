@@ -6,6 +6,7 @@ more complicated effects and filters
 
 import numpy as np
 
+from skimage import morphology
 
 import primitives
 import trees
@@ -89,7 +90,35 @@ def edge_tree(frame):
     return frame
 
 
+def draw_channel_trees(frame):
+    """
+    use the individual channels (r,g,b for instance) of the image to draw separate trees on the
+    frame. each tree will be drawn in the color of the channel it represents.
+    """
 
+    tree_function = trees.tree_edges
+    tree_function = trees.quad_queue
+    # pass each channel to the quadtree function (and dilate right away)
+    # tree_collection = [morphology.binary_dilation(tree_function(frame[:, :, d]))\
+        # for d in range(frame.shape[-1])]
+    tree_collection = [tree_function(frame[:, :, d])\
+        for d in range(frame.shape[-1])]
+
+    # concat into a multichannel image. type is still bool.
+    tree = np.stack(tree_collection, axis=-1)
+
+    # make a mask of all the trees together.
+    all_mask = np.stack(tree.any(axis=-1))
+
+    # this is the use case for putmask. first we'll zero out all channels.
+    # seems like we should be able to use broadcast_to here but there's some shape rules i don't
+    # grasp. we can just use a for loop instead...
+    for d in range(frame.shape[-1]):
+        np.putmask(frame[:, :, d], all_mask, 0)
+    # now draw the new tree edges in there
+    np.putmask(frame, tree, 255)
+
+    return frame
 
 def thresh_tree_thresh(frame, block_size=7):
     """
