@@ -15,6 +15,8 @@ from skimage import morphology
 from skimage import filters
 
 import visual_fields
+import primitives
+import trees
 
 #---------------------------------------------------------------------------------------------------
 
@@ -36,6 +38,30 @@ def capture(num_frames, device=0):
         elif cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
+    camera.release()
+    cv2.destroyAllWindows()
+    return frame_list
+
+#---------------------------------------------------------------------------------------------------
+
+def auto_capture(num_frames, device=0):
+    """
+    as above, so below. this one just grabs the number of frames specified as fast as it can as
+    soon as you press c.
+    """
+
+    camera = cv2.VideoCapture(device)
+
+    frame_list = []
+    while True:
+        _, frame = camera.read()
+        cv2.imshow('frame', frame)
+        if cv2.waitKey(1) & 0xFF == ord('c'):
+            for _ in range(num_frames):
+                _, frame = camera.read()
+                cv2.imshow('frame', frame)
+                frame_list.append(frame)
+            break
     camera.release()
     cv2.destroyAllWindows()
     return frame_list
@@ -70,17 +96,18 @@ class TranslationRegistrar(object):
     initialize it with an image and register/ stitch other images to it. translation is the only
     supported transformation.
     """
-    def __init__(self, source):
+    def __init__(self, source, grayscale_function = primitives.grayscale):
         """
         we'll register all subsequent images to the source
         """
         self.source = source
         self.image_dim = source.ndim
+        self.grayscale_function = grayscale_function
         # we'll use gray_source to register against
         if self.image_dim == 2:
             self.gray_source = self.source
         elif self.image_dim == 3:
-            self.gray_source = visual_fields.grayscale(self.source)
+            self.gray_source = self.grayscale_function(self.source)
         
         self.images = [self.source]
         self.translations = [np.zeros(2)]
@@ -102,7 +129,7 @@ class TranslationRegistrar(object):
             # compute its offset to the source
             translation, _, _ = feature.register_translation(
                 self.gray_source,
-                visual_fields.grayscale(this_target))
+                self.grayscale_function(this_target))
             self.translations.append(translation)
 
     def stitch_images(self):
@@ -132,7 +159,7 @@ class TranslationRegistrar(object):
                 new_image[this_translation[0] : stop[0], this_translation[1] : stop[1], :] = this_image
                 output_images.append(new_image)
             output_stack = np.stack(output_images)
-            print(output_stack.shape)
+            # print(output_stack.shape)
             mean_output = np.nanmean(output_stack, axis=0)
             std_output = np.nanstd(output_stack, axis=0)
             
@@ -144,9 +171,10 @@ def stitch(num_frames, device=0):
     """
     capture and stitch together a series of frames. translation only.
     """
-    frames = capture(num_frames, device=device)
+    # frames = capture(num_frames, device=device)
+    frames = auto_capture(num_frames, device=device)
 
-    registrar = TranslationRegistrar(frames[0])
+    registrar = TranslationRegistrar(frames[0])#, grayscale_function=trees.tree_edges)
     registrar.add_target(*frames[1:])
 
     mean, std = registrar.stitch_images()
@@ -198,7 +226,7 @@ if __name__ == '__main__':
         DEVICE = int(sys.argv[1])
     else:
         DEVICE = 0
-    stitch(6, device=DEVICE)
+    stitch(100, device=DEVICE)
     # mean_stack(5, device=DEVICE)
     # register_translation(device=DEVICE)
     # FRAMES = capture(2, device=DEVICE)

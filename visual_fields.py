@@ -31,6 +31,7 @@ import trees
 
 
 
+
 # monitor the framerate!
 def framerate_wrapper(func, frame, time_per_pixel=0.0003, bar_height=30):
     """
@@ -40,7 +41,7 @@ def framerate_wrapper(func, frame, time_per_pixel=0.0003, bar_height=30):
     """
 
     first_time = cv2.getTickCount()
-    frame = func(frame)
+    frame = np.atleast_3d(func(frame))
     last_time = cv2.getTickCount()
 
     # this is the way openCV suggests to do it. probably more accurate than time.time
@@ -171,9 +172,11 @@ def render_generator(func, device=0):
 if __name__ == '__main__':
     if len(sys.argv) > 1:
         # gray_window(int(sys.argv[1]))
-        render(primitives.draw_gray_tree, int(sys.argv[1]))
+        # render(primitives.draw_corner_tree, int(sys.argv[1]))
+        render(primitives.sobel_hv, int(sys.argv[1]))
         # render(trees.color_tree, int(sys.argv[1]))
         # render(effects.draw_channel_trees, int(sys.argv[1]))
+        # render(effects.gray_skeleton, int(sys.argv[1]))
         # special_halo_render(int(sys.argv[1]))
         # special_halo_render_two(int(sys.argv[1]))
         # difference_render(smooth_scale, int(sys.argv[1]))

@@ -44,12 +44,60 @@ def draw_gray_tree(frame):
     """
     use a grayscale copy of the frame to draw a quadtree on the original frame
     """
-    # tree = trees.tree_edges(grayscale(frame))
-    tree = trees.higher_tree_edges(grayscale(frame))
+    tree = trees.tree_edges(grayscale(frame))
     tree = morphology.binary_dilation(tree)
     return color_mask(frame, np.logical_not(tree))
 
+def draw_corner_tree(frame):
+    """
+    use a grayscale copy of the frame to draw a quadtree and block out upper left corners of nodes
+    """
+    tree = trees.tree_corners(grayscale(frame))
+    # tree = morphology.skeletonize(tree)
+    # tree = morphology.binary_dilation(tree)
+    return color_mask(frame, np.logical_not(tree))
 
+def draw_dot_tree(frame):
+    """
+    use a grayscale copy of the frame to draw a quadtree and put a dot at centers of nodes
+    """
+    tree = trees.tree_dots(grayscale(frame))
+    selem = morphology.diamond(4, dtype=np.bool)
+    tree = morphology.binary_dilation(tree, selem=selem)
+    return color_mask(frame, np.logical_not(tree))
+
+def build_skeleton(frame):
+    """
+    build a corner tree, skeletonize, dilate
+    """
+    tree = trees.tree_corners(frame)
+    tree = morphology.skeletonize(tree)
+    # tree = morphology.binary_dilation(tree)
+    morphology.remove_small_objects(tree, min_size=20, connectivity=2, in_place=True)
+    tree = morphology.binary_dilation(tree)
+    return tree
+
+
+def sobel(frame):
+    """
+    return the sobel importance of an rgb image
+    """
+    frame = grayscale(frame)
+    frame = filters.sobel(frame)
+    # print(frame.max())
+    return normalize(frame)
+
+def sobel_hv(frame):
+    """
+    compute horizontal/ vertical sobel intensities and convert to red/ blue values. green channel
+    will be left zero.
+    """
+    output = np.zeros(frame.shape, dtype=np.uint8)
+    frame = grayscale(frame)
+    # output[:, :, 1] = filters.sobel(frame)
+    output[:, :, 0] = normalize(filters.sobel_h(frame))
+    output[:, :, 2] = normalize(filters.sobel_v(frame))
+    return output
 
 #---------------------------------------------------------------------------------------------------
 
@@ -123,13 +171,17 @@ def rgb_distance(frame):
 
 def normalize(frame):
     """
-    normalize the frame to [0, 255]. preserves input shape
+    normalize the frame to [0, 255]. preserves input shape.
     """
 
     # minimum bound
-    frame = frame - frame.min()
+    print(frame.min())
+    print(frame.max())
+    # frame = frame - frame.min()
+    frame -= frame.min()
     # maximum bound
-    frame = frame / frame.max()
+    # frame = frame / frame.max()
+    frame /= frame.max()
     # [0, 255]
     return (frame * 255).astype(np.uint8)
 
@@ -260,4 +312,13 @@ def thresh_colors(frame, block_size=7):
 
     return frame
 
-
+def roll_channels_2d(frame, factor=1):
+    """
+    roll each channel by *factor* relative to the channel before it.
+    """
+    for channel in range(frame.shape[-1]-1):
+        this_channel = frame[:, :, channel+1]
+        this_channel = np.roll(this_channel, channel*factor, axis=0)
+        this_channel = np.roll(this_channel, channel*factor, axis=1)
+        frame[:, :, channel+1] = this_channel
+    return frame

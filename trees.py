@@ -219,6 +219,27 @@ def tree_edges(frame, max_tree_depth=6, max_leaf_std=10):
 
     return output
 
+def tree_corners(frame, max_tree_depth=6, max_leaf_std=10):
+    """
+    block out the minimum corner of each node.
+    """
+    predicate = partial(multichannel_std, max_leaf_std=max_leaf_std)
+    output_func = minimum_corner
+    output = np.zeros(frame.shape[:2], dtype=np.bool)
+    quad_tree(frame, output, output_func, predicate, max_tree_depth=max_tree_depth)
+
+    return output
+
+def tree_dots(frame, max_tree_depth=6, max_leaf_std=10):
+    """
+    put a dot on each node.
+    """
+    predicate = partial(multichannel_std, max_leaf_std=max_leaf_std)
+    output_func = draw_dot
+    output = np.zeros(frame.shape[:2], dtype=np.bool)
+    quad_tree(frame, output, output_func, predicate, max_tree_depth=max_tree_depth)
+
+    return output
 
 #=================================================================
 #============== PREDICATES =======================================
@@ -254,7 +275,7 @@ def draw_dot(output, x, y):
 
 def minimum_corner(output, x, y):
     """
-    write True over the lower left corner of output and False elsewhere
+    write True over the upper left corner of output and False elsewhere
     """
     output.fill(False)
     output[:y, :x] = True

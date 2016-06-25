@@ -7,6 +7,7 @@ more complicated effects and filters
 import numpy as np
 
 from skimage import morphology
+from skimage import color
 
 import primitives
 import trees
@@ -97,10 +98,8 @@ def draw_channel_trees(frame):
     """
 
     tree_function = trees.tree_edges
-    tree_function = trees.quad_queue
+
     # pass each channel to the quadtree function (and dilate right away)
-    # tree_collection = [morphology.binary_dilation(tree_function(frame[:, :, d]))\
-        # for d in range(frame.shape[-1])]
     tree_collection = [tree_function(frame[:, :, d])\
         for d in range(frame.shape[-1])]
 
@@ -119,6 +118,49 @@ def draw_channel_trees(frame):
     np.putmask(frame, tree, 255)
 
     return frame
+
+def skeleton_channels(frame):
+    """
+    convert image to another colorspace.
+    split up the channels of the image and build a corner tree for each.
+    skeletonize each channel.
+    dilate each channel.
+    roll each channel a little further in both directions than the one before.
+    mask out the new image and draw the skeletons on it
+    convert to rgb and return
+    """
+
+    tree_function = primitives.build_skeleton
+
+    tree_collection = [tree_function(frame[:, :, d])\
+        for d in range(frame.shape[-1])]
+
+    # concat into a multichannel image. type is still bool.
+    tree = np.stack(tree_collection, axis=-1)
+
+    # roll the trees relative to one another
+    primitives.roll_channels_2d(tree, factor=10)
+
+    # make a mask of all the trees together.
+    all_mask = np.stack(tree.any(axis=-1))
+
+    # this is the use case for putmask. first we'll zero out all channels.
+    # seems like we should be able to use broadcast_to here but there's some shape rules i don't
+    # grasp. we can just use a for loop instead...
+    for d in range(frame.shape[-1]):
+        np.putmask(frame[:, :, d], all_mask, 0)
+    # now draw the new tree edges in there
+    np.putmask(frame, tree, 255)
+
+    return frame
+
+def gray_skeleton(frame):
+    """
+    draw a skeletonized corner tree on the image using the grayscale
+    """
+    skeleton = primitives.build_skeleton(primitives.grayscale(frame))
+
+    return primitives.color_mask(frame, np.logical_not(skeleton))
 
 def thresh_tree_thresh(frame, block_size=7):
     """
