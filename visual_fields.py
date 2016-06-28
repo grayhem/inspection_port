@@ -51,7 +51,7 @@ def framerate_wrapper(func, frame, time_per_pixel=0.0003, bar_height=30):
     bar_length = int(np.ceil(execution_time / time_per_pixel))
     frame[-bar_height:, :bar_length, :] = 255
 
-    print(execution_time)
+    # print(execution_time)
     # print(bar_length)
     return frame
 
@@ -138,8 +138,8 @@ def render(func, device=0):
 
     while True:
         _, frame = cap.read()
-        # cv2.imshow('frame', func(frame))
-        cv2.imshow('frame', framerate_wrapper(func, frame))
+        cv2.imshow('frame', func(frame))
+        # cv2.imshow('frame', framerate_wrapper(func, frame))
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
@@ -165,6 +165,172 @@ def render_generator(func, device=0):
     cap.release()
     cv2.destroyAllWindows()
 
+def render_rolling_corner(device=0):
+    """
+    move the upper left hand corner of the video input around the output. this is the prototype.
+    """
+
+    cap = cv2.VideoCapture(device)
+    _, frame = cap.read()
+    shape = np.asarray(frame.shape[:2]) / 2
+
+    for position in rolling_position_generator(shape):
+        _, frame = cap.read()
+        # move the corner
+        new_frame = frame.copy()
+        piece = frame[:shape[0], :shape[1]]
+        end = position + shape
+        new_frame[position[0]: end[0], position[1]: end[1]] = piece
+        # cv2.imshow('frame', primitives.sobel_triple(new_frame))
+        cv2.imshow('frame', new_frame)
+        # cv2.imshow('frame', framerate_wrapper(func, frame))
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+
+def rolling_position_generator(shape, start=(0, 0)):
+    """
+    yield a continuously rolling starting position for a sub-window.
+    shape = half the size of the entire frame
+    start = where the sub-window starts
+    """
+    position = np.array(start, dtype=np.int)
+
+    while True:
+        if position[1] < shape[1] and position[0] == 0:
+            # move right until hits upper right corner
+            position[1] += 1
+        elif position[1] == shape[1] and position[0] < shape[0]:
+            # move down until hits lower right corner
+            position[0] += 1
+        elif position[1] > 0 and position[0] == shape[0]:
+            # move left until hits lower left corner
+            position[1] -= 1
+        elif position[1] == 0 and position[0] > 0:
+            # move up until hits upper left corner
+            position[0] -= 1
+
+        yield position
+
+
+def render_four_corners(device=0, func=None):
+    """
+    do 4 rolling corners. yes, they will overlap.
+    """
+
+    # get an example frame
+    cap = cv2.VideoCapture(device)
+    _, frame = cap.read()
+
+    # dimensions of a sub-window
+    shape = (np.asarray(frame.shape[:2])/2).astype(np.int)
+
+    # upper left corner of each sub-window
+    upper_lefts = np.array([
+        [0, 0],
+        [0, shape[1]],
+        shape,
+        [shape[0], 0]
+    ], dtype=np.int)
+
+
+    # lower right corner of each sub-window
+    lower_rights = upper_lefts + shape
+
+    # a position generator for each sub-window
+    generators = [rolling_position_generator(shape, start=this_upper_left)\
+        for this_upper_left in upper_lefts]
+
+    for positions in zip(*generators):
+        # get the original frame and the new frame
+        _, frame = cap.read()
+        new_frame = frame.copy()
+        # drop each sub-window into its place in the frame. this is where the overlap happens
+        for index, put_start in enumerate(positions):
+            # this is where we put to
+            put_end = put_start + shape
+
+            # this is where we take from
+            from_start = upper_lefts[index]
+            from_end = lower_rights[index]
+
+            # take
+            sub_window = frame[from_start[0]: from_end[0], from_start[1]: from_end[1]]
+            # put
+            new_frame[put_start[0]: put_end[0], put_start[1]: put_end[1]] = sub_window
+
+        if func is None:
+            cv2.imshow('frame', new_frame)
+        else:
+            cv2.imshow('frame', framerate_wrapper(func, new_frame))
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+def render_four_backwards(device=0, func=None):
+    """
+    same as render_four_corners but instead of moving the corners of the original frame into new
+    spots in the output frame, render moving sub-windows of the original frame into static corners
+    of the output frame.
+    """
+
+
+    # get an example frame
+    cap = cv2.VideoCapture(device)
+    _, frame = cap.read()
+
+    # dimensions of a sub-window
+    shape = (np.asarray(frame.shape[:2])/2).astype(np.int)
+
+    # upper left corner of each sub-window
+    upper_lefts = np.asarray([
+        [0, 0],
+        [0, shape[1]],
+        shape,
+        [shape[0], 0]
+    ], dtype=np.int)
+
+    # lower right corner of each sub-window
+    lower_rights = upper_lefts + shape
+
+    # a position generator for each sub-window
+    generators = [rolling_position_generator(shape, start=this_upper_left)\
+        for this_upper_left in upper_lefts]
+
+    for positions in zip(*generators):
+        # get the original frame and the new frame
+        _, frame = cap.read()
+        new_frame = frame.copy()
+        # drop each sub-window into its place in the frame. this is where the overlap happens
+        for index, from_start in enumerate(positions):
+            # this is where we put to
+            put_end = lower_rights[index]
+            put_start = upper_lefts[index]
+
+            # this is where we take from
+            from_end = from_start + shape
+
+            # take
+            sub_window = frame[from_start[0]: from_end[0], from_start[1]: from_end[1]]
+            # put
+            new_frame[put_start[0]: put_end[0], put_start[1]: put_end[1]] = sub_window
+
+        if func is None:
+            cv2.imshow('frame', new_frame)
+        else:
+            cv2.imshow('frame', framerate_wrapper(func, new_frame))
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+
 
 
 #---------------------------------------------------------------------------------------------------
@@ -173,9 +339,13 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         # gray_window(int(sys.argv[1]))
         # render(primitives.draw_corner_tree, int(sys.argv[1]))
-        render(primitives.sobel_hv, int(sys.argv[1]))
+        # render(primitives.sobel_triple, int(sys.argv[1]))
+        # render(effects.sobel_glow, int(sys.argv[1]))
+        # render_rolling_corner(int(sys.argv[1]))
+        # render_four_corners(device=int(sys.argv[1]), func=effects.gray_skeleton)
+        # render_four_backwards(device=int(sys.argv[1]), func=effects.gray_skeleton)
         # render(trees.color_tree, int(sys.argv[1]))
-        # render(effects.draw_channel_trees, int(sys.argv[1]))
+        render(effects.sparkle_trees, int(sys.argv[1]))
         # render(effects.gray_skeleton, int(sys.argv[1]))
         # special_halo_render(int(sys.argv[1]))
         # special_halo_render_two(int(sys.argv[1]))

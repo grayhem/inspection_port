@@ -94,11 +94,27 @@ def sobel_hv(frame):
     """
     output = np.zeros(frame.shape, dtype=np.uint8)
     frame = grayscale(frame)
-    # output[:, :, 1] = filters.sobel(frame)
-    output[:, :, 0] = normalize(filters.sobel_h(frame))
-    output[:, :, 2] = normalize(filters.sobel_v(frame))
+    # dilation doesn't really improve much
+    # morphology.dilation(normalize(np.abs(filters.sobel_h(frame))), out=output[:, :, 0])
+    # morphology.dilation(normalize(np.abs(filters.sobel_v(frame))), out=output[:, :, 2])
+    output[:, :, 0] = normalize(np.abs(filters.sobel_h(frame)))
+    output[:, :, 2] = normalize(np.abs(filters.sobel_v(frame)))
     return output
 
+def sobel_triple(frame):
+    """
+    compute horizontal/ vertical sobel intensities and convert to red/ blue values. green channel
+    will get the un-directed sobel filter. very pleasing effect.
+    """
+    output = np.zeros(frame.shape, dtype=np.uint8)
+    frame = grayscale(frame)
+    output[:, :, 0] = normalize(np.abs(filters.sobel_h(frame)))
+    output[:, :, 1] = normalize(filters.sobel(frame))
+    output[:, :, 2] = normalize(np.abs(filters.sobel_v(frame)))
+    return output
+
+
+# how about box counting or some pyramid thing for a local fractal dimension
 #---------------------------------------------------------------------------------------------------
 
 # input to all of these is expected to be an rgb frame
@@ -175,12 +191,8 @@ def normalize(frame):
     """
 
     # minimum bound
-    print(frame.min())
-    print(frame.max())
-    # frame = frame - frame.min()
     frame -= frame.min()
     # maximum bound
-    # frame = frame / frame.max()
     frame /= frame.max()
     # [0, 255]
     return (frame * 255).astype(np.uint8)

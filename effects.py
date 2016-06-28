@@ -71,7 +71,22 @@ def halo_two_dee(frame, roll_rows=30, roll_cols=30, thresh_param=50):
     return frame + difference
 
 
+def sobel_glow(frame, threshold=10):
+    """
+    use the 3-channel sobel filter (primitives.sobel_triple) to find edges. take the bright parts of
+    that frame and replace pixels there in the original frame with them.
+    """
 
+    # get edges
+    edges = primitives.sobel_triple(frame)
+
+    # get a mask for the edges
+    edge_mask = edges.max(2) < threshold
+
+    # zero out the original frame where there are edges
+    frame = primitives.color_mask(frame, edge_mask)
+
+    return frame + edges
 
 
 
@@ -107,7 +122,7 @@ def draw_channel_trees(frame):
     tree = np.stack(tree_collection, axis=-1)
 
     # make a mask of all the trees together.
-    all_mask = np.stack(tree.any(axis=-1))
+    all_mask = tree.any(axis=-1)
 
     # this is the use case for putmask. first we'll zero out all channels.
     # seems like we should be able to use broadcast_to here but there's some shape rules i don't
@@ -116,6 +131,40 @@ def draw_channel_trees(frame):
         np.putmask(frame[:, :, d], all_mask, 0)
     # now draw the new tree edges in there
     np.putmask(frame, tree, 255)
+
+    return frame
+
+
+def sparkle_trees(frame):
+    """
+    use the individual channels (r,g,b for instance) of the image to draw separate trees on the
+    frame. each tree will be drawn in the color of the channel it represents. then get rid of the
+    white lines.
+    """
+
+    tree_function = trees.tree_edges
+
+    # pass each channel to the quadtree function (and dilate right away)
+    tree_collection = [tree_function(frame[:, :, d], max_tree_depth=6)\
+        for d in range(frame.shape[-1])]
+
+    # concat into a multichannel image. type is still bool.
+    tree = np.stack(tree_collection, axis=-1)
+
+    # make a mask of all the trees together.
+    all_mask = tree.any(axis=-1)
+
+    # and get rid of the whites
+    no_whites_mask = np.logical_not(tree.all(axis=-1))
+    all_mask = np.logical_and(all_mask, no_whites_mask)
+
+    # this is the use case for putmask. first we'll zero out all channels.
+    # seems like we should be able to use broadcast_to here but there's some shape rules i don't
+    # grasp. we can just use a for loop instead...
+    for d in range(frame.shape[-1]):
+        np.putmask(frame[:, :, d], all_mask, 0)
+        # now draw the new tree edges in there
+        np.putmask(frame[:, :, d], np.logical_and(tree[:, :, d], no_whites_mask), 255)
 
     return frame
 
