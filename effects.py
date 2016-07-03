@@ -8,9 +8,12 @@ import numpy as np
 
 from skimage import morphology
 from skimage import color
+from skimage import filters
 
 import primitives
 import trees
+
+from unseen import representations
 
 
 
@@ -249,4 +252,70 @@ def not_cell_shading(frame):
     # now apply the mask to the tree
     frame = primitives.color_mask(frame, edge_mask)
     return frame
+
+def dark_sobel(frame, proportion=0.5):
+    """
+    replace the dark regions of the image with triple sobel edges
+    """
+    sobel = primitives.sobel_triple(frame)
+    mask = morphology.binary_dilation(primitives.dark_region_mask(frame, proportion=proportion))
+    # keep the bright regions
+    new_frame = primitives.color_mask(frame, mask)
+    # replace dark with sobel edges
+    # np.logical_not(mask, out=mask)
+    # new_frame += primitives.color_mask(sobel*4, mask)
+    new_frame += primitives.color_mask(sobel*4, np.logical_not(mask))
+
+    return new_frame
+
+# do a dot tree and compute radius of gyration. draw radius of gyration on the image w/o dot tree.
+
+# grayscale an rgb frame and flatten it, then do symmetrized dots on the flattened signal and plot
+# that with or without the original frame behind it
+# do that for each channel independently, converting the boolean snowflake to a channel in the output
+# image. use a not-binary dilation to smear the snowflakes out a little?
+# vary parameters over time!
+
+def gray_snowflake(frame, angle=60, top=250, lag=1, cutoff=2000):
+    """
+    grayscale the frame, flatten it, compute an SDP and return that.
+    """
+    frame = primitives.grayscale(frame)
+
+    snowflake = representations.symmetrized_dots(
+        np.sqrt(frame.flatten()[:cutoff]),
+        angle=angle,
+        top=top,
+        lag=lag)
+
+    # print(snowflake.shape)
+    # snowflake = morphology.binary_dilation(snowflake)
+
+    return (snowflake*255).astype(np.uint8)
+
+def special_snowflake(frame, angle=60, top=240, lag=10, skip=20):
+    """
+    take each channel of the frame and do a snowflake on it
+    """
+
+    output = []
+    for channel in range(frame.shape[-1]):
+
+        snowflake = representations.symmetrized_dots(
+            np.sqrt(frame[:, :, channel].flatten()[::skip]),
+            angle=angle,
+            top=top,
+            lag=lag)
+        # snowflake = morphology.binary_dilation(snowflake)
+        snowflake = (snowflake*255).astype(np.uint8)
+        output.append(snowflake)
+    output = np.stack(output, axis=-1)
+    # print(output.min())
+    # print(output.max())
+    output = primitives.smooth_scale(output, sigma=1, scale=1)
+    output = primitives.normalize(output)
+    # print(output.min())
+    # print(output.max())
+    # print(output.dtype)
+    return output.astype(np.uint8)
 

@@ -119,6 +119,24 @@ def sobel_triple(frame):
 
 # input to all of these is expected to be an rgb frame
 
+def reflect_101(frame, border=75):
+    """
+    pad the frame with a reflection that doesn't duplicate the element on the original edge of the
+    image
+    """
+    return cv2.copyMakeBorder(
+        frame,
+        border,
+        border,
+        border,
+        border,
+        cv2.BORDER_REFLECT_101)
+
+def resize(frame, fx=1.5, fy=1.5):
+    """
+    scale the frame
+    """
+    return cv2.resize(frame, None, fx=fx, fy=fy, interpolation=cv2.INTER_CUBIC)
 
 
 
@@ -304,12 +322,12 @@ def color_mask(frame, mask):
     frame = (frame.reshape(-1, 3)*mask.reshape(-1, 1)).reshape(frame_shape)
     return frame
 
-def smooth_scale(frame, sigma=2, scale=3):
+def smooth_scale(frame, sigma=2, scale=3, multichannel=True):
     """
     apply a gaussian smoothing filter and then scale by given factor
     """
-    frame = filters.gaussian(frame, sigma=sigma, multichannel=True)
-    return (frame*scale).astype(np.uint8)
+    frame = filters.gaussian(frame, sigma=sigma, multichannel=multichannel)
+    return (frame*scale)
 
 def thresh_colors(frame, block_size=7):
     """
@@ -334,3 +352,26 @@ def roll_channels_2d(frame, factor=1):
         this_channel = np.roll(this_channel, channel*factor, axis=1)
         frame[:, :, channel+1] = this_channel
     return frame
+
+def dark_region_mask(frame, proportion=0.5):
+    """
+    return a mask covering regions darker than proportion * mean grayscale value with False
+    """
+
+    if frame.ndim == 2:
+        # we have a BW frame so no need to do grayscale
+        use_frame = frame.view()
+    else:
+        # color frame
+        use_frame = grayscale(frame)
+    threshold = proportion * use_frame.mean()
+
+    return use_frame > threshold
+
+def dark_regions(frame, proportion=0.5):
+    """
+    black out regions darker than proportion*mean
+    """
+    mask = dark_region_mask(frame, proportion=proportion)
+    return color_mask(frame, mask)
+

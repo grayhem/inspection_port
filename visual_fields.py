@@ -48,8 +48,11 @@ def framerate_wrapper(func, frame, time_per_pixel=0.0003, bar_height=30):
     execution_time = (last_time - first_time) / cv2.getTickFrequency()
 
     # the whole idea here is kinda shonky. too lazy to figure out how to draw text on image.
-    bar_length = int(np.ceil(execution_time / time_per_pixel))
-    frame[-bar_height:, :bar_length, :] = 255
+    # bar_length = int(np.ceil(execution_time / time_per_pixel))
+    # frame[-bar_height:, :bar_length, :] = 255
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    cv2.putText(frame, str(execution_time), (10, 50), font, 1, (255,255,255), 1, cv2.LINE_AA)
 
     # print(execution_time)
     # print(bar_length)
@@ -138,8 +141,8 @@ def render(func, device=0):
 
     while True:
         _, frame = cap.read()
-        cv2.imshow('frame', func(frame))
-        # cv2.imshow('frame', framerate_wrapper(func, frame))
+        cv2.imshow('frame', framerate_wrapper(func,frame))
+        # cv2.imshow('frame', primitives.resize(framerate_wrapper(func, frame)))
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
@@ -286,6 +289,7 @@ def render_four_backwards(device=0, func=None):
 
     # dimensions of a sub-window
     shape = (np.asarray(frame.shape[:2])/2).astype(np.int)
+    print(shape)
 
     # upper left corner of each sub-window
     upper_lefts = np.asarray([
@@ -317,6 +321,7 @@ def render_four_backwards(device=0, func=None):
 
             # take
             sub_window = frame[from_start[0]: from_end[0], from_start[1]: from_end[1]]
+
             # put
             new_frame[put_start[0]: put_end[0], put_start[1]: put_end[1]] = sub_window
 
@@ -332,20 +337,26 @@ def render_four_backwards(device=0, func=None):
 
 
 
+# reflect and then rotate
+
 
 #---------------------------------------------------------------------------------------------------
 
 if __name__ == '__main__':
     if len(sys.argv) > 1:
         # gray_window(int(sys.argv[1]))
-        # render(primitives.draw_corner_tree, int(sys.argv[1]))
+        # render(primitives.draw_gray_tree, int(sys.argv[1]))
         # render(primitives.sobel_triple, int(sys.argv[1]))
+        # render(primitives.dark_regions, int(sys.argv[1]))
+        # render(effects.dark_sobel, int(sys.argv[1]))
+        # render(effects.gray_snowflake, int(sys.argv[1]))
+        render(effects.special_snowflake, int(sys.argv[1]))
         # render(effects.sobel_glow, int(sys.argv[1]))
         # render_rolling_corner(int(sys.argv[1]))
-        # render_four_corners(device=int(sys.argv[1]), func=effects.gray_skeleton)
-        # render_four_backwards(device=int(sys.argv[1]), func=effects.gray_skeleton)
+        # render_four_corners(device=int(sys.argv[1]), func=primitives.resize)
+        # render_four_backwards(device=int(sys.argv[1]), func=primitives.resize)
         # render(trees.color_tree, int(sys.argv[1]))
-        render(effects.sparkle_trees, int(sys.argv[1]))
+        # render(effects.sparkle_trees, int(sys.argv[1]))
         # render(effects.gray_skeleton, int(sys.argv[1]))
         # special_halo_render(int(sys.argv[1]))
         # special_halo_render_two(int(sys.argv[1]))
