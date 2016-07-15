@@ -7,7 +7,7 @@ these are pretty much just discrete event simulators.
 
 import sys
 from collections import deque
-from functools import partial
+from functools import partial, reduce
 
 import cv2
 import numpy as np
@@ -132,12 +132,12 @@ class Void(object):
         values or tuples of (min, max) specifying range for a random value.
         """
 
+        pass
 
-
-        --------------------------------------
+        #--------------------------------------
         
-        all of this part only has to be done once per star parameter specification. we can do it in another function called by the constructor method.
-        we can also use the same function (method for random generator) for size and duration.
+        # all of this part only has to be done once per star parameter specification. we can do it in another function called by the constructor method.
+        # we can also use the same function (method for random generator) for size and duration.
 
     def _sanitize_args(self, arg_dict):
         """
@@ -169,7 +169,7 @@ class Void(object):
             return maybe_range
 
 
-        --------------------------------------
+        #--------------------------------------
 
 
         # get the basic star
@@ -219,6 +219,7 @@ def regular_stars(args):
     size and duration can be exact values (integer) or tuples of integers indicating a range for a
     uniform random number. size should be odd.
     """
+    pass
 
     
 
@@ -238,4 +239,199 @@ def color_lookup(color):
             raise ValueError("color must be a 3-length ndarray")
     else:
         raise ValueError("color was not of a recognizable type")
+
+
+def stick_render(stick_generator, frame_size=(480, 640)):
+    """
+    given a generator that yields an index array, fill in the indices provided by the generator in
+    the frame with white and fill the rest black. then render the frame.
+    """
+
+    frame = np.zeros(frame_size, dtype=np.uint8)
+    for indices in stick_generator(frame_size):
+        # fill it with black
+        frame.fill(0)
+        np.put(frame, indices, 255)
+        cv2.imshow('frame', frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    cv2.destroyAllWindows()
+
+
+def marching_column(frame_size, offset=0):
+    """
+    basically the simplest animation. draw a column that moves across the frame.
+    """
+
+    rows, cols = frame_size
+    # this is the index to the first col of each row in a frame this size
+    indices = np.arange(rows)*cols
+    # so, about the counter. we can cast it as an integer here but assignment will promote it to a
+    # double. which means the animation might get jumpy if you let it run a long time. the other
+    # expedient option would be to make an array with one uint in it and just let it overflow...
+    # which means the animation will jump every time it overflows. w/e.
+    frame_counter = offset
+    while True:
+        # don't forget to cast back to an integral type
+        yield indices + int(frame_counter % cols)
+        frame_counter += 1
+
+def marching_row(frame_size, offset=0):
+    """
+    same as the marching col, but, well, if you need to read the docstring to understand this
+    function i might not be able to help you
+    """
+    rows, cols = frame_size
+    indices = np.arange(cols)
+    frame_counter = offset
+    while True:
+        yield indices + int(frame_counter % rows)*cols
+        frame_counter += 1
+
+def stack_animations(frame_size, stick_generators):
+    """
+    given a list of animation generators, run them all at once. to use this, wrap it in a partial.
+    """
+    # oh, this is important. if you port this over to python2 then use functools.izip here or you're
+    # in for a world of hurt.
+    active_generators = [this_generator(frame_size) for this_generator in stick_generators]
+    the_iterators = zip(*active_generators)
+    for these_indices in the_iterators:
+        all_index = reduce(np.union1d, these_indices)
+        yield all_index
+
+def lotta_rows_and_cols(num_rows, num_cols, frame_size=(480, 640)):
+    """
+    return a partial accepting one arg (frame size) combining a number of rows and columns at 
+    ??? offsets.
+    """
+    # row_offsets = np.random.randint(low=0, high=frame_size[0], size=num_rows)
+    # col_offsets = np.random.randint(low=0, high=frame_size[1], size=num_cols)
+    row_offsets = np.linspace(0, frame_size[0], num_rows).astype(np.uint)
+    col_offsets = np.linspace(0, frame_size[1], num_cols).astype(np.uint)
+    row_generators = [partial(marching_row, offset=this_offset) for this_offset in row_offsets]
+    col_generators = [partial(marching_column, offset=this_offset) for this_offset in col_offsets]
+    all_generators = row_generators + col_generators
+    return partial(stack_animations, stick_generators=all_generators)
+
+
+def biased_tree(
+        size=(400, 400),
+        fill_branches=False,
+        seed=10,
+        max_depth=6,
+        bias=(
+            (0.1, 0.7),
+            (0.15, 0.05))):
+    """
+    render a square frame. divide it into quarters recursively. at every tick, descend the tree at
+    random, with each node being given a certain bias to be selected. if fill_branches, add 1 to all
+    cells inside the selected quadrant before selecting a child to descend through. at the
+    specified depth, add 1 to all cells in the last quadrant.
+    bias should be entered as you want it visually-- due to the row/ col fuckery we will transpose
+    it here.
+    """
+
+    frame = np.zeros(size, dtype=np.uint8)
+
+    # seeding is optional
+    if seed is not None:
+        np.random.seed(seed)
+
+    # transpose the bias matrix so that it visually corresponds to the row/ col standard
+    # we will also flatten to facilitate indexing
+    bias = np.asarray(bias).T.flatten()
+    # normalize so that it sums to 1
+    bias /= bias.sum()
+    # now do a cumulative sum to facilitate indexing
+    bias = np.cumsum(bias)
+
+    def compute_sub_window(window):
+        """
+        given a window in the frame, pick a quadrant at random and return its min and max indices
+        """
+        # get a number from 0-1
+        selection = np.random.uniform()
+        # print(selection)
+        # find where it slots in the bias matrix
+        index = np.searchsorted(bias, selection)
+        # print(index)
+        # construct all possible sub-windows
+        half_row = int(np.floor(window[0, 1] - window[0, 0]) * 0.5) + window[0, 0]
+        half_col = int(np.floor(window[1, 1] - window[1, 0]) * 0.5) + window[1, 0]
+        all_sub_windows = [
+            [
+                [window[0, 0], half_row],   # UL
+                [window[1, 0], half_col]
+            ],
+            [
+                [half_row, window[0, 1]],   # LL
+                [window[1, 0], half_col]
+            ],
+            [
+                [window[0, 0], half_row],   # UR
+                [half_col, window[1, 1]]
+            ],
+            [
+                [half_row, window[0, 1]],   # LR
+                [half_col, window[1, 1]]
+
+            ]]
+
+        # now index into those sub-windows
+        sub_window = np.asarray(all_sub_windows[index])
+        # print("index: {}".format(index))
+        # print("sub window: \n{}".format(sub_window))
+        return sub_window
+
+    def fill_tree(window, my_depth):
+        """
+        recurse down the tree and increment branches on the way
+        """
+        sub_window = compute_sub_window(window)
+        frame[sub_window[0, 0]: sub_window[0, 1], sub_window[1, 0]: sub_window[1, 1]] += 1
+        if my_depth < max_depth:
+            fill_tree(sub_window, my_depth+1)
+
+    def no_fill_tree(window, my_depth):
+        """
+        recurse down the tree without incrementing branches along the way
+        """
+        sub_window = compute_sub_window(window)
+        if my_depth < max_depth:
+            no_fill_tree(sub_window, my_depth+1)
+        else:
+            frame[sub_window[0, 0]: sub_window[0, 1], sub_window[1, 0]: sub_window[1, 1]] += 1
+
+
+    # we only have to decide once if we want to fill branches or not
+    if fill_branches:
+        tree = fill_tree
+    else:
+        tree = no_fill_tree
+
+    # start from the entire frame-- [[minx, maxx], [miny, maxy]
+    window = np.array([
+        [0, size[0]],
+        [0, size[1]]])
+    # print(window)
+
+    while True:
+        # descend the tree
+        tree(window, 0)
+        # print("ding")
+        cv2.imshow('frame', frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    cv2.destroyAllWindows()
+
+
+if __name__ == '__main__':
+    # stacked_lines = partial(stack_animations, stick_generators=[marching_row, marching_column])
+    # stick_render(marching_row)
+    # stick_render(marching_column)
+    # stick_render(stacked_lines)
+    # LOTTA = lotta_rows_and_cols(10, 10)
+    # stick_render(LOTTA)
+    biased_tree(fill_branches=True)
 
