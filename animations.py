@@ -315,6 +315,10 @@ def lotta_rows_and_cols(num_rows, num_cols, frame_size=(480, 640)):
     return partial(stack_animations, stick_generators=all_generators)
 
 
+# do a biased tree with arbitrary-sized bias matrix
+# mutate the bias matrix over time
+# allow bias matrix to change with depth
+
 def biased_tree(
         size=(400, 400),
         fill_branches=False,
@@ -425,6 +429,130 @@ def biased_tree(
             break
     cv2.destroyAllWindows()
 
+def triple_biased_tree(
+        size=(400, 400),
+        fill_branches=False,
+        seed=10,
+        max_depth=6,
+        biases=(
+            (
+                (0.1, 0.7),
+                (0.15, 0.05)
+            ),
+            (
+                (0.4, 0.2),
+                (0.1, 0.3)
+            ),
+            (
+                (0.03, 0.2),
+                (0.17, 0.6)
+            ))):
+    """
+    render a square frame. divide it into quarters recursively. at every tick, descend the tree at
+    random, with each node being given a certain bias to be selected. if fill_branches, add 1 to all
+    cells inside the selected quadrant before selecting a child to descend through. at the
+    specified depth, add 1 to all cells in the last quadrant.
+    bias should be entered as you want it visually-- due to the row/ col fuckery we will transpose
+    it here.
+    """
+
+    frame = np.zeros((size[0], size[1], 3), dtype=np.uint8)
+
+    # seeding is optional
+    if seed is not None:
+        np.random.seed(seed)
+
+    # transpose the bias matrix so that it visually corresponds to the row/ col standard
+    # we will also flatten to facilitate indexing
+    use_biases = []
+    for bias in biases:
+        bias = np.asarray(bias).T.flatten()
+        # normalize so that it sums to 1
+        bias /= bias.sum()
+        # now do a cumulative sum to facilitate indexing
+        bias = np.cumsum(bias)
+        use_biases.append(bias)
+
+    def compute_sub_window(window, my_bias):
+        """
+        given a window in the frame, pick a quadrant at random and return its min and max indices
+        """
+        # get a number from 0-1
+        selection = np.random.uniform()
+        # print(selection)
+        # find where it slots in the bias matrix
+        index = np.searchsorted(my_bias, selection)
+        # print(index)
+        # construct all possible sub-windows
+        half_row = int(np.floor(window[0, 1] - window[0, 0]) * 0.5) + window[0, 0]
+        half_col = int(np.floor(window[1, 1] - window[1, 0]) * 0.5) + window[1, 0]
+        all_sub_windows = [
+            [
+                [window[0, 0], half_row],   # UL
+                [window[1, 0], half_col]
+            ],
+            [
+                [half_row, window[0, 1]],   # LL
+                [window[1, 0], half_col]
+            ],
+            [
+                [window[0, 0], half_row],   # UR
+                [half_col, window[1, 1]]
+            ],
+            [
+                [half_row, window[0, 1]],   # LR
+                [half_col, window[1, 1]]
+
+            ]]
+
+        # now index into those sub-windows
+        sub_window = np.asarray(all_sub_windows[index])
+        # print("index: {}".format(index))
+        # print("sub window: \n{}".format(sub_window))
+        return sub_window
+
+    def fill_tree(window, my_depth, my_bias, my_frame):
+        """
+        recurse down the tree and increment branches on the way
+        """
+        sub_window = compute_sub_window(window, my_bias)
+        my_frame[sub_window[0, 0]: sub_window[0, 1], sub_window[1, 0]: sub_window[1, 1]] += 1
+        if my_depth < max_depth:
+            fill_tree(sub_window, my_depth+1, my_bias, my_frame)
+
+    def no_fill_tree(window, my_depth, my_bias, my_frame):
+        """
+        recurse down the tree without incrementing branches along the way
+        """
+        sub_window = compute_sub_window(window, my_bias)
+        if my_depth < max_depth:
+            no_fill_tree(sub_window, my_depth+1, my_bias, my_frame)
+        else:
+            my_frame[sub_window[0, 0]: sub_window[0, 1], sub_window[1, 0]: sub_window[1, 1]] += 1
+
+
+    # we only have to decide once if we want to fill branches or not
+    if fill_branches:
+        tree = fill_tree
+    else:
+        tree = no_fill_tree
+
+    # start from the entire frame-- [[minx, maxx], [miny, maxy]
+    window = np.array([
+        [0, size[0]],
+        [0, size[1]]])
+    # print(window)
+
+    while True:
+        # descend the tree
+        for stupid_index in range(3):
+            tree(window, 0, use_biases[stupid_index], frame[:, :, stupid_index])
+        # print("ding")
+        cv2.imshow('frame', frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    cv2.destroyAllWindows()
+
 
 if __name__ == '__main__':
     # stacked_lines = partial(stack_animations, stick_generators=[marching_row, marching_column])
@@ -434,4 +562,4 @@ if __name__ == '__main__':
     # LOTTA = lotta_rows_and_cols(10, 10)
     # stick_render(LOTTA)
     biased_tree(fill_branches=True)
-
+    triple_biased_tree(fill_branches=True)
