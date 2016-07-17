@@ -319,6 +319,129 @@ def lotta_rows_and_cols(num_rows, num_cols, frame_size=(480, 640)):
 # mutate the bias matrix over time
 # allow bias matrix to change with depth
 
+# webcam and animations as generators that just yield frames. then we can have our effect renderer
+# take any kind of input source and rescale, lay on effects and framerate counter etc.
+
+# use a pyramid decomposition of an input frame (like from a webcam) at some fixed depth as the
+# bias matrix
+
+def bias_tree_generator(frame, max_depth, bias, increment=1):
+    """
+    a generator to do the fun part of the bias tree animation. bring your own frame. the iterator
+    will yield it back to you, but it will also modify the original memory in place. again,
+    configure the bias matrix so that it visually corresponds to the pattern you want and we'll
+    transpose it here.
+    the frame will be divided into a number of sections along each axis corresponding to the entries
+    in the bias matrix.
+    """
+
+    # what shape is the bias matrix?
+    bias_shape = bias.shape
+
+    # transpose the bias matrix so that it visually corresponds to the row/ col standard
+    # we will also flatten to facilitate indexing
+    bias = np.asarray(bias).flatten()
+    # normalize so that it sums to 1
+    bias /= bias.sum()
+    # now do a cumulative sum to facilitate indexing
+    bias = np.cumsum(bias)
+
+    def compute_sub_window(window):
+        """
+        given a window in the frame, pick a section at random and return its min and max indices.
+        """
+
+        # get a number from 0-1
+        selection = np.random.uniform()
+        # print(selection)
+        # find where it slots in the bias matrix
+        flat_index = np.searchsorted(bias, selection)
+        # and turn that back into a multidimensional index
+        n_index = np.unravel_index(flat_index, bias_shape)
+
+        # now figure out where each sub-window starts and stops
+        sub_window = []
+        for dim in (0, 1):
+            starts = np.linspace(
+                window[dim, 0],
+                window[dim, 1],
+                num=bias_shape[dim],
+                endpoint=False,
+                dtype=np.int)
+            ends = starts + starts[1] - starts[0]
+            all_sub_windows = list(zip(starts, ends))
+            # now index into those potential sub-windows to get the one we selected at random
+            sub_window.append(all_sub_windows[n_index[dim]])
+
+        # now index into those sub-windows
+        sub_window = np.asarray(sub_window)
+        # print("index: {}".format(n_index))
+        # print("sub window: \n{}".format(sub_window))
+        return sub_window
+
+    def descend_tree(window, my_depth):
+        """
+        at each node of the tree, pick a new child. increment values at all associated indices and
+        recurse.
+        """
+        # print(my_depth)
+        sub_window = compute_sub_window(window)
+        frame[sub_window[0, 0]: sub_window[0, 1], sub_window[1, 0]: sub_window[1, 1]] += increment
+        if my_depth < max_depth:
+            descend_tree(sub_window, my_depth+1)
+
+    # start from the entire frame-- [[minx, maxx], [miny, maxy]
+    window = np.array([
+        [0, frame.shape[0]],
+        [0, frame.shape[1]]])
+
+    # that's all it is
+    while True:
+        descend_tree(window, 0)
+        yield frame
+
+def n_bias_tree_sample(
+        size=(600, 600),
+        max_depth=6,
+        bias=(
+            (0.1, 0.7),
+            (0.15, 0.05))):
+    """
+    recreate the original bias tree pattern with the new implementation
+    """
+    frame = np.zeros(size, dtype=np.uint8)
+    # bias = np.asarray(bias)
+    # bias = np.eye(3) + np.random.rand(3,3)
+    # bias = np.eye(3)
+    # bias = np.random.rand(3,4)
+    print(bias)
+    jenny = bias_tree_generator(frame, max_depth, bias)
+
+    for _ in jenny:
+        cv2.imshow('frame', frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    cv2.destroyAllWindows()
+
+def n_bias_tree_rgb(
+        size=(600, 600),
+        max_depth=6,
+        increment=3):
+    """
+    same but colorized
+    """
+    frame = np.zeros((size[0], size[1], 3), dtype=np.uint8)
+    bias = [np.random.rand(3, 3) for _ in range(3)]
+    for b in bias:
+        print(b)
+    channels = [bias_tree_generator(frame[:, :, d], max_depth, bias[d], increment=increment)\
+        for d in range(3)]
+    for _ in zip(*channels):
+        cv2.imshow('frame', frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    cv2.destroyAllWindows()
+
 def biased_tree(
         size=(400, 400),
         fill_branches=False,
@@ -561,5 +684,7 @@ if __name__ == '__main__':
     # stick_render(stacked_lines)
     # LOTTA = lotta_rows_and_cols(10, 10)
     # stick_render(LOTTA)
-    biased_tree(fill_branches=True)
-    triple_biased_tree(fill_branches=True)
+    # biased_tree(fill_branches=True)
+    # triple_biased_tree(fill_branches=True)
+    # n_bias_tree_sample()
+    n_bias_tree_rgb()
