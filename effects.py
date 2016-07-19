@@ -87,9 +87,10 @@ def sobel_glow(frame, threshold=10):
     edge_mask = edges.max(2) < threshold
 
     # zero out the original frame where there are edges
-    frame = primitives.color_mask(frame, edge_mask)
-
-    return frame + edges
+    # frame = primitives.color_mask(frame, edge_mask)
+    frame = primitives.mask_together(frame, edges, edge_mask)
+    return frame
+    # return frame + edges
 
 
 

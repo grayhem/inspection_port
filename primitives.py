@@ -285,6 +285,14 @@ def adaptive_threshold(frame):
     frame = filters.threshold_adaptive(grayscale(frame), block_size=block_size)
     return frame.astype(np.uint8)*255
 
+def adaptive_threshold_mask(frame):
+    """
+    adaptive thresholding with boolean output
+    """
+    block_size = 15
+    frame = filters.threshold_adaptive(grayscale(frame), block_size=block_size)
+    return frame
+
 #-----------------------------------
 
 def black_outlines(frame, sigma=1.75):
@@ -316,10 +324,13 @@ def not_edges(frame, sigma=1.75):
 
 def color_mask(frame, mask):
     """
-    use a boolean mask to zero out pixels in an RGB frame
+    use a boolean mask to zero out pixels in an RGB or grayscale frame
     """
     frame_shape = frame.shape
-    frame = (frame.reshape(-1, 3)*mask.reshape(-1, 1)).reshape(frame_shape)
+    if len(frame_shape) == 3:
+        frame = (frame.reshape(-1, 3)*mask.reshape(-1, 1)).reshape(frame_shape)
+    else:
+        frame = frame * mask
     return frame
 
 def smooth_scale(frame, sigma=2, scale=3, multichannel=True):
@@ -329,7 +340,7 @@ def smooth_scale(frame, sigma=2, scale=3, multichannel=True):
     frame = filters.gaussian(frame, sigma=sigma, multichannel=multichannel)
     return (frame*scale)
 
-def thresh_colors(frame, block_size=7):
+def thresh_colors(frame, block_size=17):
     """
     generate adaptive thresholds and use them to mask a color image
     """
@@ -375,3 +386,14 @@ def dark_regions(frame, proportion=0.5):
     mask = dark_region_mask(frame, proportion=proportion)
     return color_mask(frame, mask)
 
+def mask_together(pos_frame, neg_frame, mask):
+    """
+    zero out the pixels in pos_frame where mask is negative. zero out the pixels in neg_frame where
+    mask is positive. add neg_frame to pos_frame and return pos_frame.
+    """
+    pos_frame = color_mask(pos_frame, mask)
+    neg_frame = color_mask(neg_frame, np.logical_not(mask))
+    if neg_frame.ndim == 3:
+        return pos_frame + neg_frame
+    else:
+        return (pos_frame.reshape(-1, 3) + neg_frame.reshape(-1, 1)).reshape(pos_frame.shape)

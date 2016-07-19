@@ -6,6 +6,8 @@ creating novel visuals from a webcam. specifically, this is the I/O part.
 
 import sys
 
+from functools import partial
+
 import cv2
 import numpy as np
 
@@ -13,6 +15,7 @@ import numpy as np
 import effects
 import primitives
 import trees
+import animations
 
 # there's that dang ol void again
 # make a filter that masks every pixel that is within a certain rgb distance from its last frame (block out everything not moving)
@@ -148,7 +151,33 @@ def render(func, device=0):
 
     cap.release()
     cv2.destroyAllWindows()
+
+def camera_generator(device=0):
+    """
+    generator yielding frames from a webcam
+    """
+
+    cap = cv2.VideoCapture(device)
+    while True:
+        _, frame = cap.read()
+        yield frame
+    cap.release()
  
+def render_with_animation(animation, mask_function, device=0):
+    """
+    use some masking function to substitute frames from an animation generator into a webcam feed
+    """
+
+    for frame, image in zip(camera_generator(device), animation()):
+        mask = mask_function(frame)
+        frame = primitives.mask_together(frame, image, mask)
+        # cv2.imshow('frame', image)
+        cv2.imshow('frame', frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cv2.destroyAllWindows()
+
 #---------------------------------------------------------------------------------------------------
 
 def render_generator(func, device=0):
@@ -350,8 +379,14 @@ if __name__ == '__main__':
         # render(primitives.dark_regions, int(sys.argv[1]))
         # render(effects.dark_sobel, int(sys.argv[1]))
         # render(effects.gray_snowflake, int(sys.argv[1]))
-        render(effects.special_snowflake, int(sys.argv[1]))
+        # render(effects.special_snowflake, int(sys.argv[1]))
         # render(effects.sobel_glow, int(sys.argv[1]))
+
+        # BIAS_TREE = partial(animations.n_bias_tree_rgb, size=(480, 640))
+        # render (primitives.thresh_colors, int(sys.argv[1]))
+        # render_with_animation(animations.rgb_bias_tree_generator, primitives.dark_region_mask, device=int(sys.argv[1]))
+        STICKS = partial(animations.stick_frames, animations.lotta_rows_and_cols(10, 10))
+        render_with_animation(STICKS, primitives.adaptive_threshold_mask, device=int(sys.argv[1]))
         # render_rolling_corner(int(sys.argv[1]))
         # render_four_corners(device=int(sys.argv[1]), func=primitives.resize)
         # render_four_backwards(device=int(sys.argv[1]), func=primitives.resize)
