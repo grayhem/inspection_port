@@ -6,17 +6,27 @@ these are pretty much just discrete event simulators.
 """
 
 import sys
+import time
 from collections import deque
 from functools import partial, reduce
 
 import cv2
 import numpy as np
 
+from skimage import morphology
+
+import primitives
+
 DEFAULT_COLORS = {
     "red" : np.array([255, 0, 0], dtype=np.uint8),
     "green" : np.array([0, 255, 0], dtype=np.uint8),
     "blue" : np.array([0, 0, 255], dtype=np.uint8),
     "white" : np.array([255, 255, 255], dtype=np.uint8)
+}
+
+DILATION_FUNCTIONS = {
+    np.bool : morphology.binary_dilation,
+    np.uint8 : morphology.dilation
 }
 
 class Void(object):
@@ -696,6 +706,105 @@ def triple_biased_tree(
             break
     cv2.destroyAllWindows()
 
+def random_walk(size=(480, 640), num_dots=300, offset=40, progression=15, dtype=np.uint8):
+    """
+    draw a random walk as a series of dots on the frame. 
+    at each tick, one node in the walk will be updated.
+    """
+    frame = np.zeros(size, dtype=dtype)
+    fill = dtype(-1)
+    dilator = DILATION_FUNCTIONS[dtype]
+    selem = morphology.disk(3, dtype=dtype)
+
+    # start at the center of the frame
+    walk = [[size[0]/2, size[1]/2]]
+
+    # do this imperatively
+    for n in range(num_dots):
+        last = walk[n]
+        # print(last)
+        node = [
+            last[0] + np.random.randint(-offset, offset+1),
+            last[1] + np.random.randint(-offset, offset+1)]
+        # print(node)
+        walk.append(node)
+
+    walk = np.array(walk, dtype=np.int)
+
+    # print(walk)
+    # TODO: hahahahhahaha vectorize it numbnuts
+    while True:
+        for n in range(num_dots-1):
+            new = np.random.randint(-progression, progression+1, size=2)
+            biggest_step = max(np.abs(new))
+            for off in range(biggest_step):
+                # print(off)
+                # print(off/biggest_step)
+                walk[n:] += (new * (off / biggest_step)).astype(np.int)
+                # walk[n:] += new
+                walk = walk % np.asarray(size)
+                frame.fill(0)
+                frame[walk.T.tolist()] = fill
+
+                yield dilator(frame, selem=selem)
+            
+
+def coffee(size=(480, 640), band_thickness=10, progression=1, dtype=np.uint8):
+    """
+    like putting cream in coffee. make the top part (down to band_thickness) white, and then whited
+    addresses in each column will random walk downwards (up to progression per tick). do something
+    to make a grayscale gradient in the "cream" part. like maybe do a density kernel or some kind
+    of smoothing after moving the white pixels around
+    """
+    frame = np.zeros(size, dtype=dtype)
+
+    # we'll address the frame with flat indices just for yuks. but the indices will be stored in a
+    # 2d array until it's time for use. 
+    # HTFU way to do this
+    # band = np.tile(np.arange(size[1]), (band_thickness, 1))
+    # band += np.arange(band_thickness).reshape(-1, 1)*size[1]
+    # easy way to do this
+    band = np.arange(size[1]*band_thickness).reshape(band_thickness, size[1])
+    # we should really have col-major order since we're only going to be working on a transposed
+    # version of that array
+    band = np.copy(band, order='F').T
+
+    # fill with 255 or True
+    fill_value = dtype(-1)
+    # if we are making a boolean frame, we should dilate with the boolean dilation function
+    dilator = DILATION_FUNCTIONS[dtype]
+    selem = morphology.disk(3, dtype=dtype)
+
+    # if we don't modulo the indices we'll eventually overflow. not a terrible problem i guess?
+    # index_ceiling = size[0] * size[1]
+
+    while True:
+        np.put(frame, band.flatten(), fill_value, mode='wrap')
+        yield dilator(frame, selem=selem)
+        frame.fill(0)
+        # vectorized random walk strats
+        walks = np.random.randint(0, progression+1, band.shape)*size[1]
+        band += np.cumsum(walks, axis=1)
+        # band = band % index_ceiling
+        # print(band[0, :10])
+
+
+def animation_render(animation, sleep=None):
+    """
+    given an animation generator, render the animation.
+    """
+
+    for frame in animation():
+        try:
+            time.sleep(sleep)
+        except TypeError:
+            pass
+        cv2.imshow('frame', frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    cv2.destroyAllWindows()
+
+
 
 if __name__ == '__main__':
     # stacked_lines = partial(stack_animations, stick_generators=[marching_row, marching_column])
@@ -707,4 +816,6 @@ if __name__ == '__main__':
     # biased_tree(fill_branches=True)
     # triple_biased_tree(fill_branches=True)
     # n_bias_tree_sample()
-    n_bias_tree_rgb()
+    # n_bias_tree_rgb()
+    # animation_render(random_walk, sleep=None)
+    animation_render(coffee)

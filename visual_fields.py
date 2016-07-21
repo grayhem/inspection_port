@@ -61,6 +61,15 @@ def framerate_wrapper(func, frame, time_per_pixel=0.0003, bar_height=30):
     # print(bar_length)
     return frame
 
+def write_on_frame(frame, message):
+    """
+    write something on the frame. like, for instance, the time it took to render.
+    """
+
+    frame = np.atleast_3d(frame)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    cv2.putText(frame, str(message), (10, 50), font, 1, (255, 255, 255), 1, cv2.LINE_AA)
+
 #---------------------------------------------------------------------------------------------------
 
 def difference_render(func, device=0, dist=10):
@@ -175,6 +184,25 @@ def render_with_animation(animation, mask_function, device=0):
         cv2.imshow('frame', frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
+
+    cv2.destroyAllWindows()
+
+def combine_gen_sources(source_a, source_b, mask):
+    """
+    given two source generators and a mask generator, combine the two sources using the mask
+    """
+    animation = zip(source_a(), source_b(), mask())
+
+    first_time = cv2.getTickCount()
+    for frame_a, frame_b, frame_mask in animation:
+        frame = primitives.mask_together(frame_a, frame_b, frame_mask)
+        last_time = cv2.getTickCount()
+        execution_time = (last_time - first_time) / cv2.getTickFrequency()
+        write_on_frame(frame, str(execution_time))
+        cv2.imshow('frame', frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+        first_time = cv2.getTickCount()
 
     cv2.destroyAllWindows()
 
@@ -384,9 +412,18 @@ if __name__ == '__main__':
 
         # BIAS_TREE = partial(animations.n_bias_tree_rgb, size=(480, 640))
         # render (primitives.thresh_colors, int(sys.argv[1]))
-        # render_with_animation(animations.rgb_bias_tree_generator, primitives.dark_region_mask, device=int(sys.argv[1]))
+        # render_with_animation(animations.rgb_bias_tree_generator, 
+        # primitives.dark_region_mask, device=int(sys.argv[1]))
         STICKS = partial(animations.stick_frames, animations.lotta_rows_and_cols(10, 10))
-        render_with_animation(STICKS, primitives.adaptive_threshold_mask, device=int(sys.argv[1]))
+        BIAS = partial(animations.rgb_bias_tree_generator, increment=10)
+        # render_with_animation(STICKS, primitives.adaptive_threshold_mask, device=int(sys.argv[1]))
+        CAMERA = partial(camera_generator, device=int(sys.argv[1]))
+        COFFEE = partial(animations.coffee, dtype=np.bool, band_thickness=10)
+        WALK = partial(animations.random_walk, dtype=np.bool)
+        combine_gen_sources(BIAS, CAMERA, COFFEE)
+        combine_gen_sources(BIAS, CAMERA, STICKS)
+        combine_gen_sources(BIAS, CAMERA, WALK)
+
         # render_rolling_corner(int(sys.argv[1]))
         # render_four_corners(device=int(sys.argv[1]), func=primitives.resize)
         # render_four_backwards(device=int(sys.argv[1]), func=primitives.resize)
@@ -398,4 +435,3 @@ if __name__ == '__main__':
         # difference_render(smooth_scale, int(sys.argv[1]))
     else:
         render(tree_thresh)
-
